@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Accounting Tool</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            max-width: 900px;
+        }
+        form, table {
+            margin-bottom: 20px;
+        }
+        table, th, td {
+            border: 1px solid black;
+            border-collapse: collapse;
+            padding: 8px;
+            text-align: center;
+        }
+        .t-table {
+            margin-bottom: 20px;
+        }
+        .t-table h3 {
+            margin-top: 20px;
+        }
+        label {
+            display: block;
+            margin: 10px 0 5px;
+        }
+        input, select, button {
+            padding: 8px;
+            margin: 5px 0;
+            width: 100%;
+        }
+        button {
+            cursor: pointer;
+        }
+        #accounting-equation {
+            margin-top: 20px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>Accounting Tool</h1>
+    <form id="transaction-form">
+        <label for="date">Transaction Date:</label>
+        <input type="date" id="date" required>
+
+        <label for="description">Transaction Description:</label>
+        <input type="text" id="description" placeholder="Enter description" required>
+
+        <label for="category">Transaction Category:</label>
+        <select id="category" onchange="updateTransactionTypes()">
+            <option value="">--Select a Category--</option>
+            <option value="assets">Assets</option>
+            <option value="liabilities">Liabilities</option>
+            <option value="income">Income</option>
+            <option value="expenses">Expenses</option> <!-- Drawings under Expenses -->
+            <option value="capital">Capital</option> <!-- Capital category kept intact -->
+            <option value="returns">Returns</option>
+        </select>
+
+        <label for="type">Transaction Type:</label>
+        <select id="type">
+            <option value="">--Select a Transaction Type--</option>
+        </select>
+
+        <label for="paymentType">Payment Type:</label>
+        <select id="paymentType">
+            <option value="cash">Cash</option>
+            <option value="credit">Credit</option>
+            <option value="mixed">Mixed (Cash + Credit)</option>
+            <option value="cheque">Cheque</option>
+        </select>
+
+        <label for="amount">Amount:</label>
+        <input type="number" id="amount" required placeholder="Enter total amount">
+
+        <div id="mixed-payment" style="display: none;">
+            <label for="cashAmount">Cash Amount:</label>
+            <input type="number" id="cashAmount" placeholder="Enter cash amount">
+        </div>
+
+        <button type="button" onclick="addTransaction()">Add Transaction</button>
+    </form>
+
+    <h2>Journal Entries</h2>
+    <table id="journal-table">
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Description</th>
+                <th>Debit</th>
+                <th>Credit</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+
+    <h2>Ledger Entries (T-Tables)</h2>
+    <div id="ledger-tables"></div>
+
+    <h2>Trial Balance</h2>
+    <table id="trial-balance">
+        <thead>
+            <tr>
+                <th>Account</th>
+                <th>Debit</th>
+                <th>Credit</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+
+    <h2>Accounting Equation</h2>
+    <div id="accounting-equation">
+        Total Assets = Liabilities + Owners' Equity<br>
+        <span id="equation-details"></span>
+    </div>
+
+    <script>
+        const transactions = {
+            assets: ["Cash", "Accounts Receivable", "Inventory", "Prepaid Insurance", "Equipment", "Building", "Land", "Bank Account"],
+            liabilities: ["Accounts Payable", "Loan Payable", "Unearned Revenue", "Accrued Expenses", "Cash Overdraft", "Warranty Liability"],
+            income: ["Sales Revenue", "Service Revenue", "Interest Income", "Dividend Income", "Commission Income"],
+            expenses: [
+                "Rent Expense", "Salaries Expense", "Utilities Expense", "Depreciation Expense",
+                "Bank Charges", "Advertising Expense", "Travel Expense", "Purchases",
+                "Commission Expense", "Bad Debts Expense", "Loss on Disposal of Asset", "Carriage Inwards", "Carriage Outwards",
+                "Drawings"  // Drawings now under Expenses
+            ],
+            capital: ["Capital Contribution", "Owner's Equity", "Retained Earnings", "Dividends Declared"],  // Keep Capital category
+            returns: ["Sales Returns", "Purchase Returns", "Sales Discounts", "Purchase Discounts"]
+        };
+
+        const journal = [];
+        const ledger = {};
+        const trialBalance = {};
+
+        document.getElementById("paymentType").addEventListener("change", function () {
+            const paymentType = this.value;
+            const mixedPaymentSection = document.getElementById("mixed-payment");
+            if (paymentType === "mixed") {
+                mixedPaymentSection.style.display = "block";
+            } else {
+                mixedPaymentSection.style.display = "none";
+                document.getElementById("cashAmount").value = ""; // Clear mixed cash input
+            }
+        });
+
+        function updateTransactionTypes() {
+            const category = document.getElementById("category").value;
+            const typeDropdown = document.getElementById("type");
+            typeDropdown.innerHTML = `<option value="">--Select a Transaction Type--</option>`;
+            if (category && transactions[category]) {
+                transactions[category].forEach(type => {
+                    const option = document.createElement("option");
+                    option.value = type;
+                    option.textContent = type;
+                    typeDropdown.appendChild(option);
+                });
+            }
+        }
+
+        function addTransaction() {
+            const date = document.getElementById("date").value;
+            const description = document.getElementById("description").value;
+            const category = document.getElementById("category").value;
+            const type = document.getElementById("type").value;
+            const paymentType = document.getElementById("paymentType").value;
+            const amount = parseFloat(document.getElementById("amount").value);
+            const cashAmount = parseFloat(document.getElementById("cashAmount").value) || 0;
+            const creditAmount = paymentType === "mixed" ? amount - cashAmount : 0;
+
+            if (!date || !description || !category || !type || isNaN(amount)) {
+                alert("Please fill in all fields!");
+                return;
+            }
+
+            let debitEntries = [];
+            let creditEntries = [];
+
+            if (category === "expenses" && type === "Drawings") {
+                // When Drawings is selected, debit Owner's Equity and credit Cash
+                debitEntries.push({ account: "Owner's Equity", amount });
+                creditEntries.push({ account: "Cash", amount });
+            } else if (["assets", "expenses"].includes(category)) {
+                debitEntries.push({ account: type, amount });
+                if (paymentType === "mixed") {
+                    creditEntries.push({ account: "Cash", amount: cashAmount });
+                    creditEntries.push({ account: "Accounts Payable", amount: creditAmount });
+                } else {
+                    creditEntries.push({ account: paymentType === "cash" ? "Cash" : "Accounts Payable", amount });
+                }
+            } else if (["liabilities", "income"].includes(category)) {
+                creditEntries.push({ account: type, amount });
+                debitEntries.push({ account: paymentType === "cash" ? "Cash" : "Accounts Receivable", amount });
+            } else if (category === "capital") {
+                creditEntries.push({ account: type, amount });
+                debitEntries.push({ account: "Cash", amount });
+            } else if (category === "returns") {
+                debitEntries.push({ account: "Sales Returns", amount });
+                creditEntries.push({ account: "Accounts Receivable", amount });
+            }
+
+            // Add to journal with 'Drawings' shown in the description
+            debitEntries.forEach(entry => {
+                journal.push({ date, description: `${description} (Drawings)` , debit: entry.amount, credit: "" });
+            });
+            creditEntries.forEach(entry => {
+                journal.push({ date, description: `${description} (Drawings)`, debit: "", credit: entry.amount });
+            });
+            updateJournal();
+
+            debitEntries.concat(creditEntries).forEach(entry => {
+                ledger[entry.account] = ledger[entry.account] || [];
+                ledger[entry.account].push({
+                    date,
+                    description: `${description} (Drawings)`, // Add Drawings description
+                    debit: entry.debit ? entry.amount : "",
+                    credit: entry.credit ? entry.amount : ""
+                });
+            });
+            updateLedger();
+
+            debitEntries.forEach(entry => {
+                trialBalance[entry.account] = trialBalance[entry.account] || { debit: 0, credit: 0 };
+                trialBalance[entry.account].debit += entry.amount;
+            });
+            creditEntries.forEach(entry => {
+                trialBalance[entry.account] = trialBalance[entry.account] || { debit: 0, credit: 0 };
+                trialBalance[entry.account].credit += entry.amount;
+            });
+            updateTrialBalance();
+
+            calculateAccountingEquation();
+        }
+
+        function updateJournal() {
+            const journalTable = document.getElementById("journal-table").querySelector("tbody");
+            journalTable.innerHTML = journal.map(entry => `
+                <tr>
+                    <td>${entry.date}</td>
+                    <td>${entry.description}</td>
+                    <td>${entry.debit || ""}</td>
+                    <td>${entry.credit || ""}</td>
+                </tr>
+            `).join("");
+        }
+
+        function updateLedger() {
+            const ledgerContainer = document.getElementById("ledger-tables");
+            ledgerContainer.innerHTML = "";
+            for (const account in ledger) {
+                const table = document.createElement("table");
+                table.classList.add("t-table");
+                table.innerHTML = `
+                    <h3>${account}</h3>
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Description</th>
+                            <th>Debit</th>
+                            <th>Credit</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${ledger[account].map(entry => `
+                            <tr>
+                                <td>${entry.date}</td>
+                                <td>${entry.description}</td>
+                                <td>${entry.debit || ""}</td>
+                                <td>${entry.credit || ""}</td>
+                            </tr>
+                        `).join("")}
+                    </tbody>
+                `;
+                ledgerContainer.appendChild(table);
+            }
+        }
+
+        function updateTrialBalance() {
+            const trialTable = document.getElementById("trial-balance").querySelector("tbody");
+            trialTable.innerHTML = Object.entries(trialBalance).map(([account, totals]) => `
+                <tr>
+                    <td>${account}</td>
+                    <td>${totals.debit || ""}</td>
+                    <td>${totals.credit || ""}</td>
+                </tr>
+            `).join("");
+        }
+
+        function calculateAccountingEquation() {
+            let totalAssets = 0;
+            let totalLiabilities = 0;
+            let totalEquity = 0;
+
+            for (const account in trialBalance) {
+                if (transactions.assets.includes(account)) {
+                    totalAssets += trialBalance[account].debit - trialBalance[account].credit;
+                } else if (transactions.liabilities.includes(account)) {
+                    totalLiabilities += trialBalance[account].credit - trialBalance[account].debit;
+                } else if (transactions.capital.includes(account)) {
+                    totalEquity += trialBalance[account].credit - trialBalance[account].debit;
+                }
+            }
+
+            document.getElementById("equation-details").innerText = `
+                Total Assets: ${totalAssets.toFixed(2)}, 
+                Total Liabilities: ${totalLiabilities.toFixed(2)}, 
+                Total Equity: ${totalEquity.toFixed(2)}, 
+                Assets = Liabilities + Equity: ${(
+                    totalLiabilities + totalEquity
+                ).toFixed(2)}
+            `;
+        }
+    </script>
+</body>
+</html>
